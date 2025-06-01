@@ -16,7 +16,7 @@ async function generateCertificate(name, type, event, outputPath) {
 
   // 2. Replace placeholders
   svg = svg
-    .replace(/{type}/g, type)
+    .replace(/{c_type}/g, type)
     .replace(/{p_name}/g, name)
     .replace(/{e_name}/g, event);
 
@@ -58,9 +58,9 @@ async function processCertificates() {
       const eventStats = {};
 
       for (const row of results) {
-        const name = row.Name?.trim();
-        const event = row.Event?.trim();
-        const type = row.Type?.trim();
+        const name = row.P_Name?.trim();
+        const event = row.E_Name?.trim();
+        const type = row.C_Type?.trim();
 
         if (!name || !event) continue;
         
