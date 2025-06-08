@@ -75,49 +75,79 @@ async function processCertificates(eventId, token) {
 
     const BATCH_SIZE = 50; // Batch size
     const generatedFiles = [];
-    let certificateCount = 0;
+    const skippedFiles = [];
+    let generatedCount = 0;
 
     // Batch processing
     for (let i = 0; i < processedParticipants.length; i += BATCH_SIZE) {
       const batch = processedParticipants.slice(i, i + BATCH_SIZE);
       
-      const batchResults = await Promise.all(batch.map(async (participant) => {
+      const batchPromises = batch.map(async (participant) => {
         participant.name = capitalizeName(participant.name);
-
-        const filename = `${participant.name.replace(/\s+/g, "_")}${participant.isWinner ? '_Winner' : ''}.pdf`;
-        const outputPath = path.join(eventDir, filename);
-
-        await generateCertificate(
-          participant.isWinner ? participant.team.name : participant.name,
-          eventName,
-          participant.isWinner ? 1 : 0,
-          participant.position,
-          outputPath
-        );
         
-        return {
-          id: participant.id,
-          name: participant.name,
-          gender: participant.gender,
-          email: participant.email,
-          phone: participant.phone,
-          team: {
-            id: participant.team.id,
-            name: participant.team.name
-          },
-          isWinner: participant.isWinner,
-          position: participant.position
-        };
-      }));
+        try {
+          const displayName = participant.isWinner ? participant.team.name : participant.name;
+          const filename = `${participant.name.replace(/\s+/g, "_")}${participant.isWinner ? '_Winner' : ''}.pdf`;
+          const outputPath = path.join(eventDir, filename);
+
+          await generateCertificate(
+            displayName,
+            eventName,
+            participant.isWinner ? 1 : 0,
+            participant.position,
+            outputPath
+          );
+          
+          return {
+            id: participant.id,
+            name: participant.name,
+            gender: participant.gender,
+            email: participant.email,
+            phone: participant.phone,
+            team: {
+              id: participant.team.id,
+              name: participant.team.name
+            },
+            isWinner: participant.isWinner,
+            position: participant.position,
+            status: "success",
+          };
+        } catch (error) {
+          // Handle name too long or other errors
+          return {
+            id: participant.id,
+            name: participant.name,
+            gender: participant.gender,
+            email: participant.email,
+            phone: participant.phone,
+            team: {
+              id: participant.team.id,
+              name: participant.team.name
+            },
+            isWinner: participant.isWinner,
+            position: participant.position,
+            status: "failed",
+            error: error.message
+          };
+        }
+      });
       
+      const batchResults = await Promise.all(batchPromises);
+
+      const successful = batchResults.filter(result => result.status === "success");
+      const failed = batchResults.filter(result => result.status === "failed");
+
       generatedFiles.push(...batchResults);
-      certificateCount += batchResults.length;
+      generatedCount += successful.length;
+      skippedFiles.push(...failed);
     }
 
     return {
-      certificateCount,
       eventName,
-      generatedFiles
+      generatedCount,
+      generatedFiles,
+      skippedCount: skippedFiles.length,
+      skippedFiles
     };
   } catch (error) {
     throw new Error(`Certificate generation failed: ${error.message}`);

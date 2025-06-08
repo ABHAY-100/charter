@@ -19,7 +19,7 @@ router.post('/generate', async (req, res) => {
 
     res.json({
       success: true,
-      message: `Successfully generated ${result.certificateCount} certificates`,
+      message: `Successfully generated ${result.generatedCount} certificates and ${result.skippedCount} failed.`,
       data: result
     });
   } catch (error) {

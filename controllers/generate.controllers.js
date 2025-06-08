@@ -3,7 +3,19 @@ const path = require('path');
 const SVGtoPDF = require('svg-to-pdfkit');
 const PDFDocument = require('pdfkit');
 
+function estimateTextWidth(text, fontSize = 60.21) {
+    const avgCharWidth = fontSize * 0.55;
+    return text.length * avgCharWidth;
+}
+
 async function generateCertificate(pName, eName, cType, position = null, outputPath) {
+    const maxWidth = 590;
+    const estimatedWidth = estimateTextWidth(pName);
+
+    if (estimatedWidth > maxWidth) {
+        return Promise.reject(new Error(`Name '${pName}' is too long (approximately ${Math.round(estimatedWidth)}px). Maximum width allowed is ${maxWidth}px.`));
+    }
+
     if (cType === 1) {
         svg = fs.readFileSync(path.join(__dirname, '..', 'templates', 'excel_main_days_1.svg'), 'utf8');
     } else {
