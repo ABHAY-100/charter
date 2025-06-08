@@ -21,37 +21,50 @@ function capitalizeName(name) {
     .join(' ');
 }
 
-async function processCertificates(eventId, cType, token) {
+async function processCertificates(eventId, token) {
   try {
+    // Fetch event details
     const eventDetails = await fetchEventDetails(eventId, token);
     const eventName = eventDetails.name;
 
-    let participants = [];
-
-    if (cType === 1) { // Winners
-      const winnersData = await fetchWinners(eventId, token);
-
-      let winners = winnersData.results;
-
-      participants = winners.map(winner => ({
-        name: winner.teamName,
-        position: winner.position,
-      }));
-    } else { // Participants
-      let participantData = await fetchParticipants(eventId, token);
-
-      if (!Array.isArray(participantData)) {
-        participantData = Object.values(participantData);
-      }
-
-      // Note: We also need to check for isWinner and isCheckedIn flags before processing
-
-      participants = participantData.map(p => {
-        return {
-          name: p.user.name?.trim(),
-        };
-      });
+    // Fetch all participants details
+    let participantData = await fetchParticipants(eventId, token);
+    if (!Array.isArray(participantData)) {
+      participantData = Object.values(participantData);
     }
+
+    // Fetch winners details
+    const winnersData = await fetchWinners(eventId, token);
+    const winners = winnersData.results || [];
+
+    // Winners mapping
+    const winnersMap = winners.reduce((map, winner) => {
+      if (winner.teamName?.trim()) {
+        map.set(winner.teamName.trim(), { position: winner.position });
+      }
+      return map;
+    }, new Map());
+
+    // Process participants
+    const processedParticipants = participantData.map(p => {
+      const teamName = p.team.name?.trim();
+      const isWinner = winnersMap.has(teamName);
+      
+      return {
+        id: p.excelId,
+        name: p.user.name?.trim(),
+        gender: p.user.gender?.trim(),
+        email: p.user.email?.trim(),
+        phone: p.user.mobileNumber?.trim(),
+        team: {
+          id: p.team.id,
+          name: teamName
+        },
+        isWinner,
+        position: isWinner ? winnersMap.get(teamName).position : null,
+        isCheckedIn: p.checkedIn
+      };
+    });
 
     const eventDirName = eventName.replace(/\s+/g, "_");
     const eventDir = path.join(certificateDir, eventDirName);
@@ -60,30 +73,50 @@ async function processCertificates(eventId, cType, token) {
       fs.mkdirSync(eventDir, { recursive: true });
     }
 
+    const BATCH_SIZE = 50; // Batch size
     const generatedFiles = [];
     let certificateCount = 0;
-    let certificateType = cType === 1 ? 'Appreciation' : 'Participation';
 
-    for (const participant of participants) {
-      let appreciationType = cType === 1 ? true : false;
+    // Batch processing
+    for (let i = 0; i < processedParticipants.length; i += BATCH_SIZE) {
+      const batch = processedParticipants.slice(i, i + BATCH_SIZE);
+      
+      const batchResults = await Promise.all(batch.map(async (participant) => {
+        participant.name = capitalizeName(participant.name);
 
-      participant.name = capitalizeName(participant.name);
+        const filename = `${participant.name.replace(/\s+/g, "_")}${participant.isWinner ? '_Winner' : ''}.pdf`;
+        const outputPath = path.join(eventDir, filename);
 
-      const filename = `${participant.name.replace(/\s+/g, "_")}${appreciationType ? '_Winner' : ''}.pdf`;
-      const outputPath = path.join(eventDir, filename);
-
-      await generateCertificate(participant.name, eventName, cType, participant.position, outputPath);
-      certificateCount++;
-
-      generatedFiles.push({
-        name: participant.name,
-      });
+        await generateCertificate(
+          participant.isWinner ? participant.team.name : participant.name,
+          eventName,
+          participant.isWinner ? 1 : 0,
+          participant.position,
+          outputPath
+        );
+        
+        return {
+          id: participant.id,
+          name: participant.name,
+          gender: participant.gender,
+          email: participant.email,
+          phone: participant.phone,
+          team: {
+            id: participant.team.id,
+            name: participant.team.name
+          },
+          isWinner: participant.isWinner,
+          position: participant.position
+        };
+      }));
+      
+      generatedFiles.push(...batchResults);
+      certificateCount += batchResults.length;
     }
 
     return {
       certificateCount,
       eventName,
-      certificateType,
       generatedFiles
     };
   } catch (error) {
