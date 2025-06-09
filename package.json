@@ -1,5 +1,6 @@
 {
   "name": "charter",
+  "description": "express.js application for generating & emailing event certificates to participants for excel '25",
   "version": "1.0.0",
   "type": "module",
   "main": "app.js",
