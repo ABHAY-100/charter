@@ -1,17 +1,6 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-import { fetchParticipants, fetchEventDetails, fetchWinners } from './fetch.controllers.js';
-import { generateCertificate } from './generate.controllers.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const certificateDir = path.join(__dirname, '..', 'certificates');
-
-if (!fs.existsSync(certificateDir)) {
-  fs.mkdirSync(certificateDir, { recursive: true });
-}
+import { fetchParticipants, fetchEventDetails, fetchWinners } from '../services/fetch.service.js';
+import { generateCertificateBuffer } from './generate.controller.js';
+import { sendCertificateEmail, verifyConnection } from '../services/email.service.js';
 
 function capitalizeName(name) {
   if (!name) return '';
@@ -23,19 +12,30 @@ function capitalizeName(name) {
 
 async function processCertificates(eventId, token) {
   try {
+    // Verify SMTP connection
+    const smtpConnected = await verifyConnection();
+    if (!smtpConnected) {
+      throw new Error('Failed to connect to SMTP server. Please check your email configuration.');
+    }
+
+    // console.log('Starting certificate processing...');
+    
     // Fetch event details
     const eventDetails = await fetchEventDetails(eventId, token);
     const eventName = eventDetails.name;
+    // console.log(`Processing certificates for event: ${eventName}`);
 
     // Fetch all participants details
     let participantData = await fetchParticipants(eventId, token);
     if (!Array.isArray(participantData)) {
       participantData = Object.values(participantData);
     }
+    // console.log(`Fetched ${participantData.length} participants`);
 
     // Fetch winners details
     const winnersData = await fetchWinners(eventId, token);
     const winners = winnersData.results || [];
+    // console.log(`Fetched ${winners.length} winners`);
 
     // Winners mapping
     const winnersMap = winners.reduce((map, winner) => {
@@ -65,38 +65,54 @@ async function processCertificates(eventId, token) {
         isCheckedIn: p.checkedIn
       };
     });
-
-    const eventDirName = eventName.replace(/\s+/g, "_");
-    const eventDir = path.join(certificateDir, eventDirName);
-
-    if (!fs.existsSync(eventDir)) {
-      fs.mkdirSync(eventDir, { recursive: true });
-    }
-
-    const BATCH_SIZE = 50; // Batch size
-    const generatedFiles = [];
-    const skippedFiles = [];
-    let generatedCount = 0;
+    
+    const BATCH_SIZE = 10; // Batch size for processing
+    const emailsSent = [];
+    const failedEmails = [];
+    let sentCount = 0;
 
     // Batch processing
     for (let i = 0; i < processedParticipants.length; i += BATCH_SIZE) {
       const batch = processedParticipants.slice(i, i + BATCH_SIZE);
+      // console.log(`Processing batch ${Math.floor(i/BATCH_SIZE) + 1} of ${Math.ceil(processedParticipants.length/BATCH_SIZE)}`);
       
       const batchPromises = batch.map(async (participant) => {
         participant.name = capitalizeName(participant.name);
         
+        // Skip if no email is provided
+        if (!participant.email) {
+          console.log(`Skipping ${participant.name} - no email provided`);
+          return {
+            id: participant.id,
+            name: participant.name,
+            status: "skipped",
+            error: "No email provided"
+          };
+        }
+        
         try {
+          // console.log(`Processing ${participant.name} (${participant.email}) - ${participant.isWinner ? 'Winner' : 'Participant'}`);
           const displayName = participant.isWinner ? participant.team.name : participant.name;
-          const filename = `${participant.name.replace(/\s+/g, "_")}${participant.isWinner ? '_Winner' : ''}.pdf`;
-          const outputPath = path.join(eventDir, filename);
-
-          await generateCertificate(
+          
+          // Generate certificate buffer
+          const pdfBuffer = await generateCertificateBuffer(
             displayName,
             eventName,
             participant.isWinner ? 1 : 0,
-            participant.position,
-            outputPath
+            participant.position
           );
+          
+          // Send email with certificate attached
+          await sendCertificateEmail(
+            participant.email,
+            participant.name,
+            eventName,
+            participant.isWinner,
+            participant.position,
+            pdfBuffer
+          );
+          
+          // console.log(`Certificate sent successfully to ${participant.email}`);
           
           return {
             id: participant.id,
@@ -110,10 +126,10 @@ async function processCertificates(eventId, token) {
             },
             isWinner: participant.isWinner,
             position: participant.position,
-            status: "success",
+            status: "sent",
           };
         } catch (error) {
-          // Handle name too long or other errors
+          console.error(`Failed to send certificate to ${participant.email}:`, error.message);
           return {
             id: participant.id,
             name: participant.name,
@@ -134,23 +150,32 @@ async function processCertificates(eventId, token) {
       
       const batchResults = await Promise.all(batchPromises);
 
-      const successful = batchResults.filter(result => result.status === "success");
-      const failed = batchResults.filter(result => result.status === "failed");
+      const successful = batchResults.filter(result => result.status === "sent");
+      const failed = batchResults.filter(result => result.status === "failed" || result.status === "skipped");
 
-      generatedFiles.push(...batchResults);
-      generatedCount += successful.length;
-      skippedFiles.push(...failed);
+      emailsSent.push(...successful);
+      sentCount += successful.length;
+      failedEmails.push(...failed);
+      
+      console.log(`Batch completed: ${successful.length} sent, ${failed.length} failed`);
+      
+      // 2s delay before processing the next batch
+      if (i + BATCH_SIZE < processedParticipants.length) {
+        console.log('Pausing before next batch...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
     }
 
     return {
       eventName,
-      generatedCount,
-      generatedFiles,
-      skippedCount: skippedFiles.length,
-      skippedFiles
+      sentCount,
+      emailsSent,
+      failedCount: failedEmails.length,
+      failedEmails
     };
   } catch (error) {
-    throw new Error(`Certificate generation failed: ${error.message}`);
+    console.error('Certificate processing failed:', error);
+    throw new Error(`Certificate email sending failed: ${error.message}`);
   }
 }
 

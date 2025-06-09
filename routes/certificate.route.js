@@ -1,7 +1,10 @@
-const express = require('express');
-const router = express.Router();
+import express from 'express';
+import dotenv from 'dotenv';
 
-const { processCertificates } = require('../controllers/process.controllers');
+import { processCertificates } from '../controllers/process.controller.js';
+
+dotenv.config();
+const router = express.Router();
 
 router.post('/generate', async (req, res) => {
   try {
@@ -19,10 +22,11 @@ router.post('/generate', async (req, res) => {
 
     res.json({
       success: true,
-      message: `Successfully generated ${result.generatedCount} certificates and ${result.skippedCount} failed.`,
+      message: `Successfully processed ${result.sentCount} certificates with ${result.failedCount} failed.`,
       data: result
     });
   } catch (error) {
+    console.error('Error: ', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to generate certificates'
@@ -30,4 +34,4 @@ router.post('/generate', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;
