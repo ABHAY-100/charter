@@ -95,24 +95,45 @@ async function processCertificates(eventId, token) {
           const displayName = participant.isWinner ? participant.team.name : participant.name;
           
           // Generate certificate buffer
-          const pdfBuffer = await generateCertificateBuffer(
-            displayName,
-            eventName,
-            participant.isWinner ? 1 : 0,
-            participant.position
-          );
+          let pdfBuffer;
+          try {
+            pdfBuffer = await generateCertificateBuffer(
+              displayName,
+              eventName,
+              participant.isWinner ? 1 : 0,
+              participant.position
+            );
+          } catch (certError) {
+            console.error(`Certificate generation failed for ${participant.name}: ${certError.message}`);
+            return {
+              id: participant.id,
+              name: participant.name,
+              email: participant.email,
+              status: "failed",
+              error: `Certificate generation failed: ${certError.message}`
+            };
+          }
           
           // Send email with certificate attached
-          await sendCertificateEmail(
-            participant.email,
-            participant.name,
-            eventName,
-            participant.isWinner,
-            participant.position,
-            pdfBuffer
-          );
-          
-          // console.log(`Certificate sent successfully to ${participant.email}`);
+          try {
+            await sendCertificateEmail(
+              participant.email,
+              participant.name,
+              eventName,
+              participant.isWinner,
+              participant.position,
+              pdfBuffer
+            );
+          } catch (emailError) {
+            console.error(`Email sending failed for ${participant.name}: ${emailError.message}`);
+            return {
+              id: participant.id,
+              name: participant.name,
+              email: participant.email,
+              status: "failed",
+              error: `Email sending failed: ${emailError.message}`
+            };
+          }
           
           return {
             id: participant.id,
@@ -129,21 +150,13 @@ async function processCertificates(eventId, token) {
             status: "sent",
           };
         } catch (error) {
-          console.error(`Failed to send certificate to ${participant.email}:`, error.message);
+          console.error(`Unexpected error processing ${participant.name}: ${error.message}`);
           return {
             id: participant.id,
             name: participant.name,
-            gender: participant.gender,
             email: participant.email,
-            phone: participant.phone,
-            team: {
-              id: participant.team.id,
-              name: participant.team.name
-            },
-            isWinner: participant.isWinner,
-            position: participant.position,
             status: "failed",
-            error: error.message
+            error: `Unexpected error: ${error.message}`
           };
         }
       });
