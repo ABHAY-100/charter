@@ -7,7 +7,7 @@ async function fetchParticipants(eventId, token) {
     try {
         // console.log(`Fetching participants for event ${eventId}...`);
         const response = await axios.get(
-            `${process.env.BASE_URL}/api/registration/${eventId}/users`,
+            `${process.env.EVENTS_API_BASE_URL}/api/registration/${eventId}/users`,
             {
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -29,7 +29,7 @@ async function fetchEventDetails(eventId, token) {
     try {
         // console.log(`Fetching details for event ${eventId}...`);
         const response = await axios.get(
-            `${process.env.BASE_URL}/api/events/${eventId}`,
+            `${process.env.EVENTS_API_BASE_URL}/api/events/${eventId}`,
             {
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -51,7 +51,7 @@ async function fetchWinners(eventId, token) {
     try {
         // console.log(`Fetching winners for event ${eventId}...`);
         const response = await axios.get(
-            `${process.env.BASE_URL}/api/Result/event/${eventId}`,
+            `${process.env.EVENTS_API_BASE_URL}/api/Result/event/${eventId}`,
             {
                 headers: {
                     'Authorization': `Bearer ${token}`

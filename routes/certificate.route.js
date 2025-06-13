@@ -1,19 +1,20 @@
 import express from 'express';
 import dotenv from 'dotenv';
 
+import { isAdmin } from '../middlewares/auth.middleware.js';
 import { processCertificates } from '../controllers/process.controller.js';
 
 dotenv.config();
 const router = express.Router();
 
-router.post('/generate', async (req, res) => {
+router.post('/generate', isAdmin, async (req, res) => {
   try {
     const { eventId } = req.body;
     if (!eventId) {
       return res.status(400).json({ success: false, error: 'Event ID is required' });
     }
 
-    const token = process.env.API_TOKEN;
+    const token = req.user.accessToken;
     if (!token) {
       return res.status(500).json({ success: false, error: 'API token not configured' });
     }
