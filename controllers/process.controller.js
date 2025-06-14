@@ -46,7 +46,9 @@ async function processCertificates(eventId, token) {
     }, new Map());
 
     // Process participants
-    const processedParticipants = participantData.map(p => {
+    const processedParticipants = participantData
+    .filter(p => p.checkedIn === true)
+    .map(p => {
       const teamName = p.team.name?.trim();
       const isWinner = winnersMap.has(teamName);
       
@@ -65,6 +67,10 @@ async function processCertificates(eventId, token) {
         isCheckedIn: p.checkedIn
       };
     });
+
+    if (processedParticipants.length === 0) {
+      throw new Error('No checked-in participants found.');
+    }
     
     const BATCH_SIZE = 10; // Batch size for processing
     const emailsSent = [];
@@ -81,7 +87,7 @@ async function processCertificates(eventId, token) {
         
         // Skip if no email is provided
         if (!participant.email) {
-          console.log(`Skipping ${participant.name} - no email provided`);
+          // console.warn(`Skipping ${participant.name} (${participant.id}) - No email provided`);
           return {
             id: participant.id,
             name: participant.name,
@@ -116,7 +122,7 @@ async function processCertificates(eventId, token) {
           
           // Send email with certificate attached
           try {
-            await sendCertificateEmail(
+            sendCertificateEmail(
               participant.email,
               participant.name,
               eventName,
